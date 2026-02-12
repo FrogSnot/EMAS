@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" role="img" aria-label="EMAS - Evolutionary Multi-Agent System">
+  <defs>
+    <linearGradient id="blueGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#3498db;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2980b9;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="greenGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#2ecc71;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#27ae60;stop-opacity:1" />
+    </linearGradient>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="400" fill="#0f1117"/>
+  
+  <!-- Title Section -->
+  <text x="600" y="50" 
+        font-family="'Inter', 'Segoe UI', Arial, sans-serif" 
+        font-size="48" 
+        font-weight="700" 
+        text-anchor="middle"
+        fill="#ffffff">
+    EMAS
+  </text>
+  
+  <text x="600" y="75" 
+        font-family="'Inter', 'Segoe UI', Arial, sans-serif" 
+        font-size="16" 
+        text-anchor="middle"
+        fill="#94a3b8">
+    Evolutionary Multi-Agent System
+  </text>
+  
+  <!-- Architecture Flow -->
+  
+  <!-- Stage 1: Problem -->
+  <g transform="translate(150, 140)">
+    <rect x="0" y="0" width="140" height="80" rx="8" fill="#1e293b" stroke="#334155" stroke-width="2"/>
+    <text x="70" y="32" font-family="'Inter', 'Segoe UI', Arial, sans-serif" font-size="14" font-weight="600" text-anchor="middle" fill="#f1f5f9">Problem</text>
+    <text x="70" y="55" font-family="'Inter', 'Segoe UI', Arial, sans-serif" font-size="11" text-anchor="middle" fill="#94a3b8">Input Query</text>
+  </g>
+  
+  <line x1="290" y1="180" x2="330" y2="180" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+  
+  <!-- Stage 2: Agent Teams (Fixed interior layout) -->
+  <g transform="translate(330, 120)">
+    <rect x="0" y="0" width="160" height="120" rx="8" fill="#0f172a" stroke="#38bdf8" stroke-width="2"/>
+    <text x="80" y="25" font-family="'Inter', 'Segoe UI', Arial, sans-serif" font-size="14" font-weight="600" text-anchor="middle" fill="#f1f5f9">Agent Teams</text>
+    
+    <!-- Row 1: Team 1 -->
+    <circle cx="55" cy="50" r="7" fill="#38bdf8" opacity="0.6"/>
+    <circle cx="80" cy="50" r="7" fill="#38bdf8" opacity="0.6"/>
+    <circle cx="105" cy="50" r="7" fill="#38bdf8" opacity="0.6"/>
+    <text x="80" y="66" font-family="'Inter', 'Segoe UI', Arial, sans-serif" font-size="9" text-anchor="middle" fill="#94a3b8">Team 1</text>
+    
+    <!-- Row 2: Team N -->
+    <circle cx="55" cy="88" r="7" fill="#38bdf8" opacity="0.3"/>
+    <circle cx="80" cy="88" r="7" fill="#38bdf8" opacity="0.3"/>
+    <circle cx="105" cy="88" r="7" fill="#38bdf8" opacity="0.3"/>
+    <text x="80" y="104" font-family="'Inter', 'Segoe UI', Arial, sans-serif" font-size="9" text-anchor="middle" fill="#94a3b8">Team N</text>
+  </g>
+  
+  <line x1="490" y1="180" x2="530" y2="180" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+  
+  <!-- Stage 3: Judge -->
+  <g transform="translate(530, 140)">
+    <rect x="0" y="0" width="140" height="80" rx="8" fill="#451a03" stroke="#f59e0b" stroke-width="2"/>
+    <text x="70" y="32" font-family="'Inter', 'Segoe UI', Arial, sans-serif" font-size="14" font-weight="600" text-anchor="middle" fill="#fef3c7">Judge</text>
+    <text x="70" y="55" font-family="'Inter', 'Segoe UI', Arial, sans-serif" font-size="11" text-anchor="middle" fill="#d97706">Fitness Evaluation</text>
+  </g>
+  
+  <line x1="670" y1="180" x2="710" y2="180" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+  
+  <!-- Stage 4: Evolution -->
+  <g transform="translate(710, 120)">
+    <rect x="0" y="0" width="160" height="120" rx="8" fill="#2e1065" stroke="#a855f7" stroke-width="2"/>
+    <text x="80" y="25" font-family="'Inter', 'Segoe UI', Arial, sans-serif" font-size="14" font-weight="600" text-anchor="middle" fill="#f5f3ff">Evolution</text>
+    <text x="80" y="50" font-family="'Inter', 'Segoe UI', Arial, sans-serif" font-size="11" text-anchor="middle" fill="#c084fc">Selection &amp; Mutation</text>
+    <text x="80" y="75" font-family="'Inter', 'Segoe UI', Arial, sans-serif" font-size="11" text-anchor="middle" fill="#c084fc">Knowledge Extraction</text>
+    <text x="80" y="100" font-family="'Inter', 'Segoe UI', Arial, sans-serif" font-size="11" text-anchor="middle" fill="#c084fc">Elite Preservation</text>
+  </g>
+  
+  <line x1="870" y1="180" x2="910" y2="180" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+  
+  <!-- Stage 5: Synthesis -->
+  <g transform="translate(910, 140)">
+    <rect x="0" y="0" width="140" height="80" rx="8" fill="#064e3b" stroke="#10b981" stroke-width="2"/>
+    <text x="70" y="32" font-family="'Inter', 'Segoe UI', Arial, sans-serif" font-size="14" font-weight="600" text-anchor="middle" fill="#ecfdf5">Synthesis</text>
+    <text x="70" y="55" font-family="'Inter', 'Segoe UI', Arial, sans-serif" font-size="11" text-anchor="middle" fill="#6ee7b7">Best Solution</text>
+  </g>
+  
+  <!-- Feedback loop -->
+  <path d="M 790,240 L 790,300 L 410,300 L 410,240" 
+        stroke="#a855f7" 
+        stroke-width="2" 
+        fill="none" 
+        stroke-dasharray="5,5"
+        marker-end="url(#arrow)"/>
+  <text x="600" y="325" 
+        font-family="'Inter', 'Segoe UI', Arial, sans-serif" 
+        font-size="12" 
+        font-weight="600"
+        text-anchor="middle"
+        fill="#a855f7">
+    Next Generation
+  </text>
+  
+  <!-- Tech badge -->
+  <g transform="translate(540, 360)">
+    <rect x="0" y="0" width="120" height="24" rx="12" fill="#ffffff" opacity="0.1"/>
+    <text x="60" y="16" 
+          font-family="'Inter', 'Segoe UI', Arial, sans-serif" 
+          font-size="12" 
+          text-anchor="middle" 
+          fill="#ffffff"
+          font-weight="600">
+      Built with Rust
+    </text>
+  </g>
+</svg>
