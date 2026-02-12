@@ -13,6 +13,12 @@ evolves the best approach through natural selection.
 Built in **Rust** for zero-cost concurrency, high-speed evaluation, and
 memory-safe agent lifecycle management.
 
+### Showcase
+
+<p align="center">
+  <video src="Showcase.mp4" width="100%" controls></video>
+</p>
+
 ---
 
 ### Components
