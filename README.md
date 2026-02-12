@@ -16,7 +16,7 @@ memory-safe agent lifecycle management.
 ### Showcase
 
 <p align="center">
-  <video src="Showcase.mp4" width="100%" controls></video>
+  <video src="https://github.com/FrogSnot/EMAS/raw/master/Showcase.mp4" width="100%" controls></video>
 </p>
 
 ---
