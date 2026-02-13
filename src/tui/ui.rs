@@ -270,15 +270,31 @@ fn draw_running(frame: &mut Frame, app: &App) {
         .direction(Direction::Vertical)
         .margin(1)
         .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
             Constraint::Length(3),
             Constraint::Length(1),
-            Constraint::Min(8),
             Constraint::Length(1),
+            Constraint::Min(6),
             Constraint::Length(1),
             Constraint::Length(8),
             Constraint::Length(2),
         ])
         .split(inner);
+
+    let problem_display = if app.problem_text_cache.len() > (chunks[0].width as usize).saturating_sub(14) {
+        let max = (chunks[0].width as usize).saturating_sub(17);
+        format!("  Problem: {}...", &app.problem_text_cache[..max.min(app.problem_text_cache.len())])
+    } else {
+        format!("  Problem: {}", app.problem_text_cache)
+    };
+    let problem_line = Paragraph::new(Line::from(vec![
+        Span::styled(
+            problem_display,
+            Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
+        ),
+    ]));
+    frame.render_widget(problem_line, chunks[0]);
 
     let progress = if app.max_generations > 0 {
         (app.generation as f64 / app.max_generations as f64).min(1.0)
@@ -300,9 +316,42 @@ fn draw_running(frame: &mut Frame, app: &App) {
             app.max_generations,
             progress * 100.0
         ));
-    frame.render_widget(gauge, chunks[0]);
+    frame.render_widget(gauge, chunks[2]);
 
-    draw_team_scores(frame, app, chunks[2]);
+    let elapsed_str = app.format_elapsed();
+    let eta_str = app
+        .estimate_remaining()
+        .map(|e| format!("  ETA: ~{}", e))
+        .unwrap_or_default();
+    let token_str = if app.total_tokens > 0 {
+        format!("  Tokens: {}", format_token_count(app.total_tokens))
+    } else {
+        String::new()
+    };
+    let phase_str = format!("  Phase: {}", app.phase);
+
+    let stats_line = Line::from(vec![
+        Span::styled("  Elapsed: ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            elapsed_str,
+            Style::default().fg(Color::White),
+        ),
+        Span::styled(
+            eta_str,
+            Style::default().fg(Color::Yellow),
+        ),
+        Span::styled(
+            token_str,
+            Style::default().fg(Color::Cyan),
+        ),
+        Span::styled(
+            phase_str,
+            Style::default().fg(Color::Magenta),
+        ),
+    ]);
+    frame.render_widget(Paragraph::new(stats_line), chunks[3]);
+
+    draw_team_scores(frame, app, chunks[5]);
 
     let status_line = if !app.best_name.is_empty() {
         Line::from(vec![
@@ -319,15 +368,19 @@ fn draw_running(frame: &mut Frame, app: &App) {
             Style::default().fg(Color::Gray),
         ))
     };
-    frame.render_widget(Paragraph::new(status_line), chunks[3]);
+    frame.render_widget(Paragraph::new(status_line), chunks[6]);
 
-    draw_log(frame, app, chunks[5]);
+    draw_log(frame, app, chunks[7]);
 
     let help = Paragraph::new(Span::styled(
-        "  Running...  q: quit",
+        "  Up/Down: select team  |  Enter: team details  |  q: quit",
         Style::default().fg(Color::DarkGray),
     ));
-    frame.render_widget(help, chunks[6]);
+    frame.render_widget(help, chunks[8]);
+
+    if app.show_team_detail {
+        draw_team_detail_overlay(frame, app);
+    }
 }
 
 fn draw_team_scores(frame: &mut Frame, app: &App, area: Rect) {
@@ -353,17 +406,22 @@ fn draw_team_scores(frame: &mut Frame, app: &App, area: Rect) {
         .iter()
         .enumerate()
         .map(|(i, ts)| {
-            let marker = if i == 0 { ">" } else { " " };
+            let is_selected = i == app.selected_team;
+            let marker = if is_selected { ">" } else { " " };
             let bar = score_bar_spans(ts.total, 20);
+
+            let name_style = if is_selected {
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            } else if i == 0 {
+                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
 
             let mut spans = vec![
                 Span::styled(
                     format!(" {} {:<16}", marker, ts.name),
-                    if i == 0 {
-                        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default().fg(Color::White)
-                    },
+                    name_style,
                 ),
             ];
             spans.extend(bar);
@@ -383,6 +441,95 @@ fn draw_team_scores(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(list, inner);
 }
 
+fn draw_team_detail_overlay(frame: &mut Frame, app: &App) {
+    let area = frame.area();
+
+    let overlay_w = (area.width * 60 / 100).max(40).min(area.width.saturating_sub(4));
+    let overlay_h = 14u16.min(area.height.saturating_sub(4));
+    let x = area.x + (area.width.saturating_sub(overlay_w)) / 2;
+    let y = area.y + (area.height.saturating_sub(overlay_h)) / 2;
+    let overlay_area = Rect::new(x, y, overlay_w, overlay_h);
+
+    let clear = Block::default()
+        .style(Style::default().bg(Color::Black));
+    frame.render_widget(clear, overlay_area);
+
+    let team_name = app.team_scores.get(app.selected_team).map(|ts| &ts.name);
+    let detail = team_name.and_then(|name| {
+        app.team_details.iter().find(|d| &d.name == name)
+    });
+    let score = app.team_scores.get(app.selected_team);
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    if let (Some(detail), Some(score)) = (detail, score) {
+        lines.push(Line::from(vec![
+            Span::styled("  Team: ", Style::default().fg(Color::Yellow)),
+            Span::styled(
+                &detail.name,
+                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("     Score: {:.2}/10", score.total),
+                Style::default().fg(Color::Green),
+            ),
+        ]));
+        lines.push(Line::from(Span::styled(
+            format!(
+                "     Q:{:.1}  C:{:.1}  E:{:.1}",
+                score.quality, score.consistency, score.efficiency,
+            ),
+            Style::default().fg(Color::Gray),
+        )));
+        lines.push(Line::raw(""));
+        lines.push(Line::from(Span::styled(
+            "  Agents:",
+            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+        )));
+
+        for (i, agent) in detail.agents.iter().enumerate() {
+            let is_last = i == detail.agents.len() - 1;
+            let branch = if is_last { "  └──" } else { "  ├──" };
+
+            let tag = if agent.is_red_team {
+                Span::styled(" [RED] ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
+            } else {
+                Span::raw(" ")
+            };
+
+            lines.push(Line::from(vec![
+                Span::styled(branch, Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!(" {}", agent.name),
+                    Style::default().fg(Color::Cyan),
+                ),
+                tag,
+                Span::styled(
+                    format!("({}, temp {:.2})", agent.strategy, agent.temperature),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]));
+        }
+    } else {
+        lines.push(Line::from(Span::styled(
+            "  No detail available for this team.",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
+    let block = Block::default()
+        .title(" Team Detail ")
+        .title_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow))
+        .style(Style::default().bg(Color::Black));
+
+    let paragraph = Paragraph::new(Text::from(lines))
+        .block(block)
+        .wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, overlay_area);
+}
+
 fn draw_log(frame: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .title(" Activity Log ")
@@ -396,15 +543,40 @@ fn draw_log(frame: &mut Frame, app: &App, area: Rect) {
     let items: Vec<ListItem> = app.logs[start..]
         .iter()
         .map(|line| {
+            let color = if line.contains("Error:") {
+                Color::Red
+            } else if line.contains("Warning:") {
+                Color::Yellow
+            } else if line.contains("started") {
+                Color::Cyan
+            } else if line.contains("Evolving:") {
+                Color::Magenta
+            } else if line.contains("Converged") || line.contains("complete") {
+                Color::Green
+            } else if line.contains("Synthesising") {
+                Color::Blue
+            } else {
+                Color::Gray
+            };
             ListItem::new(Span::styled(
                 line.as_str(),
-                Style::default().fg(Color::Gray),
+                Style::default().fg(color),
             ))
         })
         .collect();
 
     let list = List::new(items);
     frame.render_widget(list, inner);
+}
+
+fn format_token_count(tokens: u64) -> String {
+    if tokens >= 1_000_000 {
+        format!("{:.1}M", tokens as f64 / 1_000_000.0)
+    } else if tokens >= 1_000 {
+        format!("{:.1}k", tokens as f64 / 1_000.0)
+    } else {
+        format!("{}", tokens)
+    }
 }
 
 // Results Screen

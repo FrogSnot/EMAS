@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
 
-use crate::arena::{ArenaEvent, EvolutionResult, TeamScore};
+use crate::arena::{ArenaEvent, EvolutionResult, Phase, TeamDetail, TeamScore};
 use crate::config::{Cli, Config, Provider, SavedParams};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,6 +129,20 @@ pub struct App {
     pub logs: Vec<String>,
     pub status: String,
 
+    pub run_started_at: Option<std::time::Instant>,
+    pub gen_durations: Vec<f64>,
+    pub gen_started_at: Option<std::time::Instant>,
+
+    pub total_tokens: u64,
+
+    pub phase: Phase,
+
+    pub team_details: Vec<TeamDetail>,
+    pub selected_team: usize,
+    pub show_team_detail: bool,
+
+    pub problem_text_cache: String,
+
     pub result: Option<EvolutionResult>,
     pub scroll_offset: u16,
 
@@ -226,6 +240,16 @@ impl App {
             best_score: 0.0,
             logs: Vec::new(),
             status: "Waiting...".into(),
+
+            run_started_at: None,
+            gen_durations: Vec::new(),
+            gen_started_at: None,
+            total_tokens: 0,
+            phase: Phase::Initialising,
+            team_details: Vec::new(),
+            selected_team: 0,
+            show_team_detail: false,
+            problem_text_cache: String::new(),
 
             result: None,
             scroll_offset: 0,
@@ -328,11 +352,27 @@ impl App {
         let now = chrono_now();
         match event {
             ArenaEvent::GenerationStarted { gen, total } => {
+                if let Some(started) = self.gen_started_at.take() {
+                    self.gen_durations.push(started.elapsed().as_secs_f64());
+                }
+                self.gen_started_at = Some(std::time::Instant::now());
                 self.generation = gen;
                 self.max_generations = total;
                 self.status = format!("Generation {}/{}  |  executing teams...", gen, total);
                 self.logs
                     .push(format!("[{}] Generation {}/{} started", now, gen, total));
+            }
+            ArenaEvent::PhaseChanged(phase) => {
+                self.phase = phase;
+            }
+            ArenaEvent::TokenUpdate { total_tokens } => {
+                self.total_tokens = total_tokens;
+            }
+            ArenaEvent::TeamDetails(details) => {
+                self.team_details = details;
+                if self.selected_team >= self.team_details.len() {
+                    self.selected_team = 0;
+                }
             }
             ArenaEvent::GenerationComplete {
                 gen,
@@ -359,6 +399,9 @@ impl App {
                 ));
             }
             ArenaEvent::Converged { gen, score } => {
+                if let Some(started) = self.gen_started_at.take() {
+                    self.gen_durations.push(started.elapsed().as_secs_f64());
+                }
                 self.status = format!("Converged at generation {} ({:.2}/10)", gen, score);
                 self.logs.push(format!(
                     "[{}] Converged at gen {} with score {:.2}",
@@ -366,6 +409,9 @@ impl App {
                 ));
             }
             ArenaEvent::SynthesisStarted => {
+                if let Some(started) = self.gen_started_at.take() {
+                    self.gen_durations.push(started.elapsed().as_secs_f64());
+                }
                 self.status = "Synthesising final response...".into();
                 self.logs
                     .push(format!("[{}] Synthesising final response...", now));
@@ -389,6 +435,30 @@ impl App {
         }
     }
 
+    pub fn elapsed_secs(&self) -> f64 {
+        self.run_started_at
+            .map(|t| t.elapsed().as_secs_f64())
+            .unwrap_or(0.0)
+    }
+
+    pub fn format_elapsed(&self) -> String {
+        let secs = self.elapsed_secs();
+        format_duration(secs)
+    }
+
+    pub fn estimate_remaining(&self) -> Option<String> {
+        if self.gen_durations.is_empty() || self.max_generations == 0 {
+            return None;
+        }
+        let avg = self.gen_durations.iter().sum::<f64>() / self.gen_durations.len() as f64;
+        let remaining_gens = self.max_generations.saturating_sub(self.generation) as f64;
+        let eta_secs = avg * remaining_gens;
+        if eta_secs < 1.0 {
+            return None;
+        }
+        Some(format_duration(eta_secs))
+    }
+
     pub fn reset_for_new_run(&mut self) {
         self.screen = Screen::Setup;
         self.generation = 0;
@@ -401,6 +471,15 @@ impl App {
         self.result = None;
         self.scroll_offset = 0;
         self.error_message = None;
+        self.run_started_at = None;
+        self.gen_durations.clear();
+        self.gen_started_at = None;
+        self.total_tokens = 0;
+        self.phase = Phase::Initialising;
+        self.team_details.clear();
+        self.selected_team = 0;
+        self.show_team_detail = false;
+        self.problem_text_cache.clear();
     }
 
     pub fn insert_char(&mut self, c: char) {
@@ -472,4 +551,18 @@ fn chrono_now() -> String {
     let m = (secs / 60) % 60;
     let s = secs % 60;
     format!("{:02}:{:02}:{:02}", h, m, s)
+}
+
+fn format_duration(total_secs: f64) -> String {
+    let total = total_secs as u64;
+    let h = total / 3600;
+    let m = (total % 3600) / 60;
+    let s = total % 60;
+    if h > 0 {
+        format!("{}h {:02}m {:02}s", h, m, s)
+    } else if m > 0 {
+        format!("{}m {:02}s", m, s)
+    } else {
+        format!("{}s", s)
+    }
 }

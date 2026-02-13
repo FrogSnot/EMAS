@@ -21,15 +21,56 @@ pub struct TeamScore {
     pub efficiency: f64,
 }
 
+#[derive(Debug, Clone)]
+pub enum Phase {
+    Initialising,
+    AgentsWorking,
+    Judging,
+    Scoring,
+    Evolving,
+    Synthesising,
+}
+
+impl std::fmt::Display for Phase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Phase::Initialising => write!(f, "Initialising"),
+            Phase::AgentsWorking => write!(f, "Agents Working"),
+            Phase::Judging => write!(f, "Judging"),
+            Phase::Scoring => write!(f, "Scoring"),
+            Phase::Evolving => write!(f, "Evolving"),
+            Phase::Synthesising => write!(f, "Synthesising"),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TeamDetail {
+    pub name: String,
+    pub agents: Vec<TeamAgentDetail>,
+    pub total_tokens: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct TeamAgentDetail {
+    pub name: String,
+    pub strategy: String,
+    pub temperature: f64,
+    pub is_red_team: bool,
+}
+
 #[derive(Debug)]
 pub enum ArenaEvent {
     GenerationStarted { gen: usize, total: usize },
+    PhaseChanged(Phase),
     GenerationComplete {
         gen: usize,
         scores: Vec<TeamScore>,
         best_name: String,
         best_score: f64,
     },
+    TokenUpdate { total_tokens: u64 },
+    TeamDetails(Vec<TeamDetail>),
     Evolving { kept: usize, spawning: usize },
     Converged { gen: usize, score: f64 },
     Warning(String),
@@ -273,6 +314,7 @@ impl Arena {
         let mut best_ever: Option<(Team, TeamOutput, FitnessScore)> = None;
 
         let mut elite_cache: Vec<(Team, TeamOutput, FitnessScore)> = Vec::new();
+        let mut cumulative_tokens: u64 = 0;
 
         for gen in 0..self.config.max_generations {
             let _ = tx.send(ArenaEvent::GenerationStarted {
@@ -297,16 +339,20 @@ impl Arena {
                 .collect();
 
             if !new_teams.is_empty() {
+                let _ = tx.send(ArenaEvent::PhaseChanged(Phase::AgentsWorking));
                 let team_outputs = self.execute_population(&new_teams, problem).await;
 
                 for (_idx, result) in &team_outputs {
                     if let Ok(output) = result {
+                        cumulative_tokens += output.total_tokens as u64;
                         for w in &output.warnings {
                             let _ = tx.send(ArenaEvent::Warning(w.clone()));
                         }
                     }
                 }
+                let _ = tx.send(ArenaEvent::TokenUpdate { total_tokens: cumulative_tokens });
 
+                let _ = tx.send(ArenaEvent::PhaseChanged(Phase::Judging));
                 let mut new_scored = self
                     .evaluate_population(
                         &new_teams,
@@ -318,6 +364,8 @@ impl Arena {
                     .await;
                 scored.append(&mut new_scored);
             }
+
+            let _ = tx.send(ArenaEvent::PhaseChanged(Phase::Scoring));
 
             scored.sort_by(|a, b| {
                 b.score
@@ -342,6 +390,19 @@ impl Arena {
                     efficiency: s.score.efficiency,
                 })
                 .collect();
+
+            let _ = tx.send(ArenaEvent::TeamDetails(
+                scored.iter().map(|s| TeamDetail {
+                    name: s.team.name.clone(),
+                    agents: s.team.agents.iter().map(|a| TeamAgentDetail {
+                        name: a.genotype.name.clone(),
+                        strategy: a.genotype.strategy.to_string(),
+                        temperature: a.genotype.temperature,
+                        is_red_team: a.genotype.is_red_team,
+                    }).collect(),
+                    total_tokens: s.output.total_tokens,
+                }).collect(),
+            ));
 
             let _ = tx.send(ArenaEvent::GenerationComplete {
                 gen: gen + 1,
@@ -388,6 +449,7 @@ impl Arena {
             knowledge.extract_conflicts(&conflict_pairs);
 
             if gen + 1 < self.config.max_generations {
+                let _ = tx.send(ArenaEvent::PhaseChanged(Phase::Evolving));
                 let _ = tx.send(ArenaEvent::Evolving {
                     kept: self.config.elite_count,
                     spawning: self.config.population_size - self.config.elite_count,
@@ -412,6 +474,7 @@ impl Arena {
         let (best_team, best_output, best_score) =
             best_ever.expect("at least one generation must run");
 
+        let _ = tx.send(ArenaEvent::PhaseChanged(Phase::Synthesising));
         let _ = tx.send(ArenaEvent::SynthesisStarted);
         let synthesis = self.synthesise(problem, &best_output).await?;
         let generations_run = best_team.generation + 1;

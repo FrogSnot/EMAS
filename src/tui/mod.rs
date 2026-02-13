@@ -13,7 +13,7 @@ use crossterm::{
 use ratatui::{backend::CrosstermBackend, Terminal};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
-use crate::arena::{Arena, ArenaEvent};
+use crate::arena::{Arena, ArenaEvent, Phase};
 use crate::config::Cli;
 
 use app::{App, FieldKind, Screen, FIELD_COUNT};
@@ -78,6 +78,15 @@ async fn event_loop(
                     app.best_name.clear();
                     app.best_score = 0.0;
                     app.status = "Starting...".into();
+                    app.run_started_at = Some(std::time::Instant::now());
+                    app.gen_durations.clear();
+                    app.gen_started_at = None;
+                    app.total_tokens = 0;
+                    app.phase = Phase::Initialising;
+                    app.team_details.clear();
+                    app.selected_team = 0;
+                    app.show_team_detail = false;
+                    app.problem_text_cache = problem.clone();
 
                     let event_tx = tx.clone();
                     tokio::spawn(async move {
@@ -263,9 +272,38 @@ fn handle_editing_key(app: &mut App, key: event::KeyEvent) {
 }
 
 fn handle_running_key(app: &mut App, key: event::KeyEvent) {
+    if app.show_team_detail {
+        match key.code {
+            KeyCode::Esc | KeyCode::Enter => {
+                app.show_team_detail = false;
+            }
+            KeyCode::Char('q') => {
+                app.should_quit = true;
+            }
+            _ => {}
+        }
+        return;
+    }
+
     match key.code {
         KeyCode::Char('q') | KeyCode::Esc => {
             app.should_quit = true;
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            if !app.team_scores.is_empty() {
+                app.selected_team = app.selected_team.saturating_sub(1);
+            }
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            if !app.team_scores.is_empty() {
+                app.selected_team =
+                    (app.selected_team + 1).min(app.team_scores.len().saturating_sub(1));
+            }
+        }
+        KeyCode::Enter => {
+            if !app.team_details.is_empty() && !app.team_scores.is_empty() {
+                app.show_team_detail = true;
+            }
         }
         _ => {}
     }
