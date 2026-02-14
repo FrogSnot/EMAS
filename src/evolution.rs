@@ -73,16 +73,6 @@ pub struct PopulationMember {
     pub cached: Option<(TeamOutput, FitnessScore)>,
 }
 
-pub fn select_elites(scored: &mut Vec<ScoredTeam>, elite_count: usize) -> Vec<&Team> {
-    scored.sort_by(|a, b| {
-        b.score
-            .total
-            .partial_cmp(&a.score.total)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    scored.iter().take(elite_count).map(|s| &s.team).collect()
-}
-
 pub fn crossover(
     parent_a: &Team,
     parent_b: &Team,
@@ -195,7 +185,12 @@ pub fn next_generation(
         .map(|s| s.score.judge_critique.clone())
         .filter(|s| !s.is_empty());
 
-    let _elite_refs = select_elites(scored, config.elite_count);
+    scored.sort_by(|a, b| {
+        b.score
+            .total
+            .partial_cmp(&a.score.total)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let elite_scored: Vec<ScoredTeam> = scored.drain(..config.elite_count.min(scored.len())).collect();
     let elite_teams: Vec<Team> = elite_scored.iter().map(|s| s.team.clone()).collect();

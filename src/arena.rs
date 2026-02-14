@@ -19,6 +19,7 @@ pub struct TeamScore {
     pub quality: f64,
     pub consistency: f64,
     pub efficiency: f64,
+    pub diversity_penalty: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -121,185 +122,20 @@ impl Arena {
     pub async fn run(&self, problem: &str) -> Result<EvolutionResult> {
         self.print_header(problem);
 
-        let mut rng = StdRng::from_entropy();
-        let mut population = evolution::create_initial_population(&self.config, &mut rng);
-        let mut knowledge = KnowledgeBase::new(15);
-        let mut conclusion_history = ConclusionHistory::new();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let config = self.config.clone();
+        let problem_owned = problem.to_string();
 
-        let mut best_ever: Option<(Team, TeamOutput, FitnessScore)> = None;
-        let mut elite_cache: Vec<(Team, TeamOutput, FitnessScore)> = Vec::new();
+        let handle = tokio::spawn(async move {
+            let arena = Arena::new(config);
+            arena.run_with_progress(&problem_owned, tx).await
+        });
 
-        for gen in 0..self.config.max_generations {
-            println!(
-                "\n{}",
-                format!("Generation {}/{}", gen + 1, self.config.max_generations)
-                    .bold()
-                    .cyan()
-            );
-            println!("{}", "-".repeat(56).dimmed());
-
-            let mut scored: Vec<ScoredTeam> = Vec::new();
-
-            for (team, output, score) in elite_cache.drain(..) {
-                scored.push(ScoredTeam {
-                    team,
-                    output,
-                    score,
-                });
-            }
-
-            let new_teams: Vec<Team> = population
-                .iter()
-                .filter(|t| !scored.iter().any(|s| s.team.id == t.id))
-                .cloned()
-                .collect();
-
-            if !new_teams.is_empty() {
-                let team_outputs = self.execute_population(&new_teams, problem).await;
-                let mut new_scored = self
-                    .evaluate_population(
-                        &new_teams,
-                        &team_outputs,
-                        problem,
-                        gen,
-                        &conclusion_history,
-                    )
-                    .await;
-                scored.append(&mut new_scored);
-            }
-
-            scored.sort_by(|a, b| {
-                b.score
-                    .total
-                    .partial_cmp(&a.score.total)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
-
-            let gen_best_score = scored.first().map(|s| s.score.total).unwrap_or(0.0);
-            let gen_best_name = scored
-                .first()
-                .map(|s| s.team.name.clone())
-                .unwrap_or_default();
-
-            for (i, st) in scored.iter().enumerate() {
-                let bar = score_bar(st.score.total);
-                let marker = if i == 0 {
-                    ">".green().bold().to_string()
-                } else {
-                    " ".to_string()
-                };
-                println!(
-                    " {} {:<18} {} {}",
-                    marker,
-                    st.team.name.white().bold(),
-                    bar,
-                    st.score.to_string().dimmed(),
-                );
-            }
-
-            println!(
-                "\n   {} {} ({})",
-                "Best:".yellow().bold(),
-                gen_best_name.green().bold(),
-                format!("{:.2}", gen_best_score).green(),
-            );
-
-            for st in &scored {
-                conclusion_history.record(&st.output, st.score.total);
-            }
-
-            for st in &scored {
-                knowledge.extract_from_critique(&st.score.judge_critique);
-            }
-            let conflict_pairs: Vec<(String, &TeamOutput)> = scored
-                .iter()
-                .map(|st| (st.team.name.clone(), &st.output))
-                .collect();
-            knowledge.extract_conflicts(&conflict_pairs);
-            if !knowledge.is_empty() {
-                println!(
-                    "   {} insights in knowledge base",
-                    knowledge.len(),
-                );
-            }
-
-            if best_ever
-                .as_ref()
-                .map_or(true, |(_, _, s)| gen_best_score > s.total)
-            {
-                let top = scored.remove(0);
-                best_ever = Some((top.team.clone(), top.output.clone(), top.score.clone()));
-                scored.insert(
-                    0,
-                    ScoredTeam {
-                        team: top.team,
-                        output: top.output,
-                        score: top.score,
-                    },
-                );
-            }
-
-            if gen_best_score >= self.config.fitness_threshold {
-                println!(
-                    "\n{}",
-                    format!(
-                        "Converged at generation {} with score {:.2}/10",
-                        gen + 1,
-                        gen_best_score
-                    )
-                    .green()
-                    .bold()
-                );
-                break;
-            }
-
-            if gen + 1 < self.config.max_generations {
-                println!(
-                    "   {} keeping top {}, spawning {} mutants...",
-                    "Evolving:".magenta().bold(),
-                    self.config.elite_count,
-                    self.config.population_size - self.config.elite_count,
-                );
-                let members = evolution::next_generation(
-                    &mut scored,
-                    &self.config,
-                    gen + 1,
-                    &knowledge,
-                    &mut rng,
-                );
-                population = Vec::with_capacity(members.len());
-                for m in members {
-                    population.push(m.team.clone());
-                    if let Some((output, score)) = m.cached {
-                        elite_cache.push((m.team, output, score));
-                    }
-                }
-            }
+        while let Some(event) = rx.recv().await {
+            Self::print_event(&event);
         }
 
-        let (best_team, best_output, best_score) =
-            best_ever.expect("at least one generation must run");
-
-        println!(
-            "\n{}",
-            "-".repeat(56).dimmed()
-        );
-        println!(
-            "{}",
-            "Synthesising final response from winning team...".bold().cyan()
-        );
-
-        let synthesis = self.synthesise(problem, &best_output).await?;
-
-        let generations_run = best_team.generation + 1;
-
-        Ok(EvolutionResult {
-            best_team,
-            best_output,
-            best_score,
-            synthesis,
-            generations_run,
-        })
+        handle.await?
     }
 
     pub async fn run_with_progress(
@@ -388,6 +224,7 @@ impl Arena {
                     quality: s.score.quality,
                     consistency: s.score.consistency,
                     efficiency: s.score.efficiency,
+                    diversity_penalty: s.score.diversity_penalty,
                 })
                 .collect();
 
@@ -678,6 +515,87 @@ impl Arena {
         }
         println!();
         println!("{}", "-".repeat(56).dimmed());
+    }
+
+    fn print_event(event: &ArenaEvent) {
+        match event {
+            ArenaEvent::GenerationStarted { gen, total } => {
+                println!(
+                    "\n{}",
+                    format!("Generation {}/{}", gen, total).bold().cyan()
+                );
+                println!("{}", "-".repeat(56).dimmed());
+            }
+            ArenaEvent::GenerationComplete {
+                scores,
+                best_name,
+                best_score,
+                ..
+            } => {
+                for (i, ts) in scores.iter().enumerate() {
+                    let bar = score_bar(ts.total);
+                    let marker = if i == 0 {
+                        ">".green().bold().to_string()
+                    } else {
+                        " ".to_string()
+                    };
+                    let penalty_str = if ts.diversity_penalty > 0.01 {
+                        format!(" D:-{:.1}", ts.diversity_penalty)
+                    } else {
+                        String::new()
+                    };
+                    println!(
+                        " {} {:<18} {} {:.2}  (Q:{:.1} C:{:.1} E:{:.1}{})",
+                        marker,
+                        ts.name.white().bold(),
+                        bar,
+                        ts.total,
+                        ts.quality,
+                        ts.consistency,
+                        ts.efficiency,
+                        penalty_str.dimmed(),
+                    );
+                }
+                println!(
+                    "\n   {} {} ({})",
+                    "Best:".yellow().bold(),
+                    best_name.green().bold(),
+                    format!("{:.2}", best_score).green(),
+                );
+            }
+            ArenaEvent::Converged { gen, score } => {
+                println!(
+                    "\n{}",
+                    format!(
+                        "Converged at generation {} with score {:.2}/10",
+                        gen, score
+                    )
+                    .green()
+                    .bold()
+                );
+            }
+            ArenaEvent::Evolving { kept, spawning } => {
+                println!(
+                    "   {} keeping top {}, spawning {} mutants...",
+                    "Evolving:".magenta().bold(),
+                    kept,
+                    spawning,
+                );
+            }
+            ArenaEvent::SynthesisStarted => {
+                println!("\n{}", "-".repeat(56).dimmed());
+                println!(
+                    "{}",
+                    "Synthesising final response from winning team..."
+                        .bold()
+                        .cyan()
+                );
+            }
+            ArenaEvent::Warning(msg) => {
+                println!("   {}: {}", "Warning".yellow(), msg);
+            }
+            _ => {}
+        }
     }
 }
 
